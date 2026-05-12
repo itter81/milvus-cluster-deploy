@@ -1,0 +1,24 @@
+version: '3.5'
+services:
+  querynode:
+    network_mode: host
+    container_name: milvus-querynode
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "querynode"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+      QUERY_COORD_ADDRESS: 192.168.70.151:19531
+      DATA_COORD_ADDRESS: 192.168.70.151:13333
+      ROOT_COORD_ADDRESS: 192.168.70.151:53100
+      INDEX_COORD_ADDRESS: 192.168.70.151:31000
+    volumes:
+      - /data/milvus/querynode:/var/lib/milvus
+      - /opt/milvus/milvus.yaml:/milvus/configs/milvus.yaml

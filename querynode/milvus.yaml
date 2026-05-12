@@ -1,0 +1,9 @@
+# ⚠️ 每个节点只需要把 queryNode.ip 改成自己的 IP，其余完全一样
+localStorage:
+  path: /var/lib/milvus/data/
+
+queryNode:
+  ip: 192.168.70.152   # 改成本机 IP
+  port: 21123
+  localStorage:
+    size: 32212254720

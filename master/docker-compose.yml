@@ -1,0 +1,265 @@
+version: '3.5'
+services:
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=10737418240
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - /data/etcd/data:/etcd
+    command: etcd -advertise-client-urls=http://192.168.70.151:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    ports:
+      - "2379:2379"
+      - "12379:2379"
+
+  pulsar:
+    container_name: milvus-pulsar
+    user: root
+    image: apachepulsar/pulsar:2.10.4
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    volumes:
+      - /data/pulsar/data:/pulsar/data
+    environment:
+      - nettyMaxFrameSizeBytes=104867840
+      - defaultRetentionTimeInMinutes=10080
+      - defaultRetentionSizeInMB=51200
+      - PULSAR_PREFIX_maxMessageSize=104857600
+      - PULSAR_GC=-XX:+UseG1GC
+      - PULSAR_PREFIX_advertisedAddress=192.168.70.151
+    ports:
+      - "6650:6650"
+    command: |
+      /bin/bash -c \
+      "bin/apply-config-from-env.py conf/standalone.conf && \
+      exec bin/pulsar standalone --no-functions-worker --no-stream-storage"
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-13T19-46-17Z
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - /data/minio/data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  rootcoord:
+    container_name: milvus-rootcoord
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "rootcoord"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+      ROOT_COORD_ADDRESS: 192.168.70.151:53100
+    volumes:
+      - /data/milvus/rootcoord:/var/lib/milvus
+      - /opt/milvus/milvus-151.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "53100:53100"
+    depends_on:
+      - etcd
+      - pulsar
+      - minio
+
+  proxy:
+    container_name: milvus-proxy
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "proxy"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+    volumes:
+      - /data/milvus/proxy:/var/lib/milvus
+      - /opt/milvus/milvus-151.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+      - "19529:19529"
+
+  querycoord:
+    container_name: milvus-querycoord
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "querycoord"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+      QUERY_COORD_ADDRESS: 192.168.70.151:19531
+    volumes:
+      - /data/milvus/querycoord:/var/lib/milvus
+      - /opt/milvus/milvus-151.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "19531:19531"
+    depends_on:
+      - etcd
+      - pulsar
+      - minio
+
+  querynode:
+    container_name: milvus-querynode
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "querynode"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+    volumes:
+      - /data/milvus/querynode:/var/lib/milvus
+      - /opt/milvus/milvus-151.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "21123:21123"
+    depends_on:
+      - querycoord
+
+  indexcoord:
+    container_name: milvus-indexcoord
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "indexcoord"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+      INDEX_COORD_ADDRESS: 192.168.70.151:31000
+    volumes:
+      - /data/milvus/indexcoord:/var/lib/milvus
+      - /opt/milvus/milvus-151.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "31000:31000"
+    depends_on:
+      - etcd
+      - pulsar
+      - minio
+
+  indexnode:
+    container_name: milvus-indexnode
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "indexnode"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+      INDEX_COORD_ADDRESS: 192.168.70.151:31000
+    volumes:
+      - /data/milvus/indexnode:/var/lib/milvus
+      - /opt/milvus/milvus-151.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "21121:21121"
+    depends_on:
+      - indexcoord
+
+  datacoord:
+    container_name: milvus-datacoord
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "datacoord"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+      DATA_COORD_ADDRESS: 192.168.70.151:13333
+    volumes:
+      - /data/milvus/datacoord:/var/lib/milvus
+      - /opt/milvus/milvus-151.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "13333:13333"
+    depends_on:
+      - etcd
+      - pulsar
+      - minio
+
+  datanode:
+    container_name: milvus-datanode
+    image: milvusdb/milvus:v2.4.13-hotfix
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "3"
+    command: ["milvus", "run", "datanode"]
+    environment:
+      ETCD_ENDPOINTS: 192.168.70.151:2379
+      MINIO_ADDRESS: 192.168.70.151:9000
+      PULSAR_ADDRESS: pulsar://192.168.70.151:6650
+    volumes:
+      - /data/milvus/datanode:/var/lib/milvus
+      - /opt/milvus/milvus-151.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "21124:21124"
+    depends_on:
+      - datacoord
+
+networks:
+  default:
+    name: milvus

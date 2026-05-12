@@ -1,0 +1,41 @@
+localStorage:
+  path: /var/lib/milvus/data/
+
+rootCoord:
+  ip: 192.168.70.151
+  port: 53100
+
+proxy:
+  ip: 192.168.70.151
+  port: 19530
+  internalPort: 19529
+  rateLimiter:
+    enabled: true
+    limit: 2000
+    burst: 4000
+
+queryCoord:
+  ip: 192.168.70.151
+  port: 19531
+
+queryNode:
+  ip: 192.168.70.151
+  port: 21123
+  localStorage:
+    size: 32212254720
+
+indexCoord:
+  ip: 192.168.70.151
+  port: 31000
+
+indexNode:
+  ip: 192.168.70.151
+  port: 21121
+
+dataCoord:
+  ip: 192.168.70.151
+  port: 13333
+
+dataNode:
+  ip: 192.168.70.151
+  port: 21124
