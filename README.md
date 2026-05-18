@@ -428,6 +428,40 @@ queryNode:
 
 ---
 
+### 12. QueryNode 内存分布不均导致 OOM 重启
+
+**现象：**
+- querycoord 日志持续报 `node offline[node=x]`，查询报 503
+- 部分 querynode 内存接近上限触发重启，日志明确显示：
+```
+load segment failed, OOM if load, memUsage=91981MB, totalMem=95718MB, thresholdFactor=0.900000
+```
+- `docker inspect milvus-querynode --format '{{.State.OOMKilled}}'` 返回 false，但实际是 Milvus 自行检测到内存超 90% 阈值主动退出，不是被内核 kill
+- 某台 querynode 挂了后其他节点接管数据，压力叠加触发连锁 OOM
+
+**根因：** 默认 balancer（SegmentCountBasedBalancer）按 segment **数量**平衡，不按 segment **大小**。不同 collection 的 segment 大小差异悬殊，数量均衡不等于内存均衡，导致部分节点内存严重偏高。
+
+**解法：** milvus.yaml 的 queryCoord 块加入 ScoreBasedBalancer：
+
+```yaml
+queryCoord:
+  ip: x.x.x.x
+  port: 19531
+  balancer: ScoreBasedBalancer
+```
+
+重启 querycoord 生效：
+
+```bash
+docker restart milvus-querycoord
+```
+
+> ⚠️ balance 是逐步进行的，不是立即生效，需等待数分钟到数十分钟
+>
+> ⚠️ 注意 milvus.yaml 不能有重复 key，`balancer` 必须写在已有的 `queryCoord` 块内，不能单独追加新块
+
+
+
 ## Author
 
 **安栋梁 (An Dongliang)** Infrastructure & AI Ops Engineer | RHCE · HCIE · KYCP
