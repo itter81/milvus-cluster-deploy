@@ -461,6 +461,36 @@ docker restart milvus-querycoord
 > ⚠️ 注意 milvus.yaml 不能有重复 key，`balancer` 必须写在已有的 `queryCoord` 块内，不能单独追加新块
 
 
+---
+
+### 13. mmapEnabled 全开导致查询性能灾难
+
+**现象：**
+- 开启 `mmapEnabled: true` 后 querynode 内存从 ~60GB 骤降至 ~6GB
+- 开发反馈 Milvus 连不上，粗筛耗时从正常水平暴增至 1350s+
+- `pool is draining and cannot accept work` 报错持续出现
+- 查询请求大量超时，业务不可用
+
+**根因：** `mmapEnabled: true` 是全量 mmap 总开关，向量数据、向量索引、标量数据、标量索引全部映射到磁盘。亿级数据量下内存中几乎无缓存，查询全部走磁盘 IO，延迟暴增。
+
+**结论：** 亿级数据量 + IVF_FLAT 索引场景下，全量 mmap 不可用，回滚后恢复正常。
+
+**如需使用 mmap 节省内存，只开 vectorIndex：**
+```yaml
+queryNode:
+  mmap:
+    vectorField: false    # 原始向量保持全内存，保证查询速度
+    vectorIndex: true     # 仅索引文件用 mmap，节省部分内存
+    scalarField: false
+    scalarIndex: false
+```
+
+> ⚠️ 全量 mmap（`mmapEnabled: true`）在亿级数据量下会导致生产事故，禁止使用
+>
+> ⚠️ 细化 mmap 配置需在测试环境验证延迟可接受后再推生产
+
+---
+
 
 ## Author
 
